@@ -1,0 +1,34 @@
+[package]
+name = "slicur"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.65.0"
+# === Publication info ===
+authors = ["Hantong Chen <cxwdyx620@gmail.com>"]
+categories = ["network-programming", "no-std"]
+description = "A library for reading network IO bytes buffer"
+keywords = ["bytes", "cursor", "network"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/hanyu-dev/slicur"
+
+[dependencies]
+const-hex = { version = "1.14.1", default-features = false, optional = true }
+rustversion = { version = "1.0.21", optional = true }
+thiserror = { version = "2.0.12", default-features = false }
+
+[features]
+default = ["feat-const"]
+
+# Enable nightly support
+feat-nightly = []
+
+# Add simple unsigned 24-bit integer type support.
+feat-u24 = []
+# Print buffer hex in debug output
+feat-debug-buffer = ["dep:const-hex"]
+# Enable const function support
+feat-const = ["dep:rustversion"]
+
+[package.metadata.docs.rs]
+features = ["feat-u24"]

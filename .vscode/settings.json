@@ -1,0 +1,11 @@
+{
+    "rust-analyzer.cargo.features": [
+        "feat-const",
+        "feat-debug-buffer",
+        "feat-nightly",
+        "feat-u24"
+    ],
+    "rust-analyzer.cargo.extraEnv": {
+        "RUSTUP_TOOLCHAIN": "nightly"
+    },
+}
