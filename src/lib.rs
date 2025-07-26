@@ -88,6 +88,7 @@ impl<'a> Reader<'a> {
         }
     }
 
+    #[inline]
     #[cfg_attr(feature = "feat-const", rustversion::attr(since(1.83.0), const))]
     /// Attempts to create a new [`Reader`] on a sub section of this readers
     /// bytes by taking a slice of the provided `length`. Will return `None` if
@@ -99,18 +100,19 @@ impl<'a> Reader<'a> {
     /// should enable the feature `feat-const` first (default enabled).
     pub fn sub(&mut self, length: usize) -> Result<Self, error::InsufficientData> {
         match self.take(length) {
-            Some(bytes) => Ok(Reader::init(bytes)),
-            None => Err(error::InsufficientData),
+            Ok(bytes) => Ok(Reader::init(bytes)),
+            Err(e) => Err(e),
         }
     }
 
+    #[inline]
     #[cfg_attr(feature = "feat-const", rustversion::attr(since(1.83.0), const))]
     /// Borrows a slice of all the remaining bytes that appear after the cursor
     /// position, then moves the cursor to the end of the buffer length.
     ///
     /// ## Const context
     ///
-    /// This function can be used in a const context since Rust 1.79.0. You
+    /// This function can be used in a const context since Rust 1.83.0. You
     /// should enable the feature `feat-const` first (default enabled).
     pub fn rest(&mut self) -> &'a [u8] {
         let peeked_rest = self.peek_rest();
@@ -140,41 +142,51 @@ impl<'a> Reader<'a> {
         }
     }
 
+    #[inline]
     #[cfg_attr(feature = "feat-const", rustversion::attr(since(1.83.0), const))]
     /// Attempts to borrow a slice of bytes from the current cursor position of
     /// `length`. If there is not enough bytes remaining after the cursor to
-    /// take the length, then `None` is returned instead.
+    /// take the length, then `error::InsufficientData` is returned instead.
     ///
     /// ## Const context
     ///
     /// This function can be used in a const context since Rust 1.83.0. You
     /// should enable the feature `feat-const` first (default enabled).
-    pub fn take(&mut self, length: usize) -> Option<&'a [u8]> {
-        if self.cursor + length <= self.buffer.len() {
-            let ret = Some(unsafe {
-                core::slice::from_raw_parts(self.buffer.as_ptr().add(self.cursor), length)
-            });
+    pub fn take(&mut self, length: usize) -> Result<&'a [u8], error::InsufficientData> {
+        let required_length = self.cursor + length;
 
-            self.cursor += length;
+        match error::InsufficientData::check(required_length, self.buffer.len()) {
+            Ok(()) => {
+                // Safety: has checked that the cursor + length does not exceed the buffer
+                // length
+                let ret = unsafe {
+                    core::slice::from_raw_parts(self.buffer.as_ptr().add(self.cursor), length)
+                };
 
-            ret
-        } else {
-            None
+                self.cursor = required_length;
+
+                Ok(ret)
+            }
+            Err(e) => Err(e),
         }
     }
 
-    #[inline(always)]
+    #[inline]
     #[cfg_attr(feature = "feat-const", rustversion::attr(since(1.83.0), const))]
-    fn take_n<const N: usize>(&mut self) -> Option<&'a [u8; N]> {
-        if self.cursor + N <= self.buffer.len() {
-            // Safety: has checked that the cursor + N does not exceed the buffer length
-            let ret = Some(unsafe { &*(self.buffer.as_ptr().add(self.cursor) as *const [u8; N]) });
+    /// Like [`take`](Self::take), but takes a fixed-size array of `N` bytes.
+    pub fn take_n<const N: usize>(&mut self) -> Result<&'a [u8; N], error::InsufficientData> {
+        let required_length = self.cursor + N;
 
-            self.cursor += N;
+        match error::InsufficientData::check(required_length, self.buffer.len()) {
+            Ok(()) => {
+                // Safety: has checked that the cursor + N does not exceed the buffer length
+                let ret = unsafe { &*(self.buffer.as_ptr().add(self.cursor) as *const [u8; N]) };
 
-            ret
-        } else {
-            None
+                self.cursor = required_length;
+
+                Ok(ret)
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -182,13 +194,13 @@ impl<'a> Reader<'a> {
     #[cfg_attr(feature = "feat-const", rustversion::attr(since(1.83.0), const))]
     /// Advances the cursor by the specified `length`.
     pub fn advance(&mut self, length: usize) -> Result<(), error::InsufficientData> {
-        if self.cursor + length > self.buffer.len() {
-            return Err(error::InsufficientData);
+        match error::InsufficientData::check(self.cursor + length, self.buffer.len()) {
+            Ok(()) => {
+                self.cursor += length;
+                Ok(())
+            }
+            Err(e) => Err(e),
         }
-
-        self.cursor += length;
-
-        Ok(())
     }
 
     #[inline]
@@ -230,8 +242,8 @@ impl<'a> Reader<'a> {
     /// should enable the feature `feat-const` first (default enabled).
     pub fn read_u8(&mut self) -> Result<u8, error::InsufficientData> {
         match self.take_n::<{ (u8::BITS / 8) as usize }>() {
-            Some(&[b0]) => Ok(b0),
-            None => Err(error::InsufficientData),
+            Ok(&[b0]) => Ok(b0),
+            Err(e) => Err(e),
         }
     }
 
@@ -244,8 +256,8 @@ impl<'a> Reader<'a> {
     /// should enable the feature `feat-const` first (default enabled).
     pub fn read_u16(&mut self) -> Result<u16, error::InsufficientData> {
         match self.take_n::<{ (u16::BITS / 8) as usize }>() {
-            Some(&b) => Ok(u16::from_be_bytes(b)),
-            None => Err(error::InsufficientData),
+            Ok(&b) => Ok(u16::from_be_bytes(b)),
+            Err(e) => Err(e),
         }
     }
 
@@ -259,8 +271,8 @@ impl<'a> Reader<'a> {
     /// should enable the feature `feat-const` first (default enabled).
     pub fn read_u24(&mut self) -> Result<u24, error::InsufficientData> {
         match self.take_n::<{ (u24::BITS / 8) as usize }>() {
-            Some(&b) => Ok(u24::from_be_bytes(b)),
-            None => Err(error::InsufficientData),
+            Ok(&b) => Ok(u24::from_be_bytes(b)),
+            Err(e) => Err(e),
         }
     }
 
@@ -273,8 +285,8 @@ impl<'a> Reader<'a> {
     /// should enable the feature `feat-const` first (default enabled).
     pub fn read_u32(&mut self) -> Result<u32, error::InsufficientData> {
         match self.take_n::<{ (u32::BITS / 8) as usize }>() {
-            Some(&b) => Ok(u32::from_be_bytes(b)),
-            None => Err(error::InsufficientData),
+            Ok(&b) => Ok(u32::from_be_bytes(b)),
+            Err(e) => Err(e),
         }
     }
 
@@ -287,8 +299,8 @@ impl<'a> Reader<'a> {
     /// should enable the feature `feat-const` first (default enabled).
     pub fn read_u64(&mut self) -> Result<u64, error::InsufficientData> {
         match self.take_n::<{ (u64::BITS / 8) as usize }>() {
-            Some(&b) => Ok(u64::from_be_bytes(b)),
-            None => Err(error::InsufficientData),
+            Ok(&b) => Ok(u64::from_be_bytes(b)),
+            Err(e) => Err(e),
         }
     }
 
@@ -301,8 +313,8 @@ impl<'a> Reader<'a> {
     /// should enable the feature `feat-const` first (default enabled).
     pub fn read_u128(&mut self) -> Result<u128, error::InsufficientData> {
         match self.take_n::<{ (u128::BITS / 8) as usize }>() {
-            Some(&b) => Ok(u128::from_be_bytes(b)),
-            None => Err(error::InsufficientData),
+            Ok(&b) => Ok(u128::from_be_bytes(b)),
+            Err(e) => Err(e),
         }
     }
 }
@@ -342,7 +354,7 @@ mod tests {
         assert!(reader.expect_empty().is_ok());
 
         // Try to take more than available
-        assert!(reader.take(1).is_none());
+        assert!(reader.take(1).is_err());
     }
 
     #[test]
@@ -550,7 +562,7 @@ mod tests {
         assert!(!reader.any_left());
         assert!(reader.expect_empty().is_ok());
 
-        assert!(reader.take(1).is_none());
+        assert!(reader.take(1).is_err());
         assert!(reader.read_u8().is_err());
 
         let rest = reader.rest();
